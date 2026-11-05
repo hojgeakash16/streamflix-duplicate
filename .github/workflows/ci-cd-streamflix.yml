@@ -1,0 +1,111 @@
+# Preparing CI/CD pipeline for Streamflix Application 
+
+name: Streamflix CI/CD Pipeline
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+jobs:
+    code: 
+        name: Code Quality Checks
+        runs-on: ubuntu-latest
+        steps:
+            - name: Clone and Checkout Repository
+              uses: actions/checkout@v7
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                node-version: 22
+                cache: 'npm' # Automatically caches npm dependencies to speed up future runs
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Run build script (if present)
+              run: npm run build --if-present
+
+            - name: Run test suite
+              run: npm test
+
+
+    build:
+        name: Build the Docker Images
+        needs: code
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v7
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build and cache local image
+              uses: docker/bake-action@v3
+              with:
+                load: true
+                set: |
+                  *.cache-from=type=gha
+                  *.cache-to=type=gha,mode=max
+
+            - name: Upload Workspace Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                name: streamflix-workspace
+                path: .
+                include-hidden-files: true
+
+
+    test:
+        name: Run Tests in Docker Environment
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+            - name: Download Build Workspace
+              uses: actions/download-artifact@v4
+              with:
+                name: streamflix-workspace
+                path: .
+
+            - name: Spin up Docker Compose Environment
+              run: docker compose up -d
+
+            - name: Test Docker Images
+              run: docker compose exec -T api npm test
+
+            - name: Tear down environment
+              if: always() # Ensures clean up happens even if the test step fails
+              run: docker compose down -v --rmi local
+
+    deploy:
+        name: Deploy to Docker Hub
+        needs: [code, build, test]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                username: ${{ secrets.DOCKERHUB_USERNAME }}
+                password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+            - name: Build and push production image
+              uses: docker/build-push-action@v6
+              with:
+                context: .
+                file: ./Dockerfile # Validated root execution path
+                push: true
+                tags: |
+                    ${{ secrets.DOCKERHUB_USERNAME }}/streamflix-api:latest
+                    ${{ secrets.DOCKERHUB_USERNAME }}/streamflix-api:${{ github.sha }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+
+            
