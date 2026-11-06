@@ -70,8 +70,8 @@ jobs:
             - name: Test the Service Health Endpoint
               run: |
                 for i in {1..15}; do
-                  if curl --fail http://localhost:3000/health; then
-                    echo "API is healthy"
+                  if curl --fail http://localhost:3000/api/health; then
+                    echo "Streamflix API is healthy"
                     exit 0
                   fi
                   echo "Waiting for API..."
