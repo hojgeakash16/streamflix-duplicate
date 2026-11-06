@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: streamflix
+      POSTGRES_PASSWORD: streamflix
+      POSTGRES_DB: streamflix
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: ./backend
+    environment:
+      DB_HOST: db
+      JWT_SECRET: local-dev-secret
+    depends_on:
+      - db
+    expose:
+      - "3000"
+
+  web:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+

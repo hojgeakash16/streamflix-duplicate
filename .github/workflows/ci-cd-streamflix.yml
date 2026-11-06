@@ -52,38 +52,49 @@ jobs:
                 path: .
                 include-hidden-files: true
 
-
     test:
-        name: Run Tests in Docker Environment
-        needs: build
-        runs-on: ubuntu-latest
-        steps:
-            - name: Download Build Workspace
-              uses: actions/download-artifact@v4
-              with:
-                name: streamflix-workspace
-                path: .
+      name: Test Production Docker Environment
+      needs: build
+      runs-on: ubuntu-latest
+      steps:
+      - name: Download Build Workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: streamflix-workspace
+          path: .
 
-            - name: Spin up Docker Compose Environment
-              run: docker compose up -d
+      - name: Start Production Containers
+        run: docker compose -f docker-compose-prod.yml up --build -d
 
-            - name: Test the Service Health Endpoint
-              run: |
-                for i in {1..15}; do
-                  if curl --fail http://localhost:3000/api/health; then
-                    echo "Streamflix API is healthy"
-                    exit 0
-                  fi
-                  echo "Waiting for API..."
-                  sleep 5
-                done
+      - name: Test Frontend
+        run: |
+          for i in {1..15}; do
+            if curl -fsS http://localhost:5173/; then
+              echo "Frontend is healthy"
+              exit 0
+            fi
+            echo "Waiting for frontend..."
+            sleep 5
+          done
+          echo "Frontend health check failed"
+          exit 1
 
-                echo "API health check failed"
-                exit 1
+      - name: Test Backend and Database
+        run: |
+          for i in {1..15}; do
+            if curl -fsS http://localhost:5173/api/health; then
+              echo "Backend and database are healthy"
+              exit 0
+            fi
+            echo "Waiting for backend..."
+            sleep 5
+          done
+          echo "Backend health check failed"
+          exit 1
 
-            - name: Tear down environment
-              if: always() # Ensures clean up happens even if the test step fails
-              run: docker compose down -v --rmi local
+      - name: Stop Containers
+        if: always()
+        run: docker compose -f docker-compose-prod.yml down -v --rmi local
 
     deploy:
         name: Deploy to Docker Hub
